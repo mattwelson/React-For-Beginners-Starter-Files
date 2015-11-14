@@ -12,6 +12,7 @@ var Navigation = ReactRouter.Navigation;
 var History = ReactRouter.History;
 var CreateBrowserHistory = require('history/lib/createBrowserHistory');
 var h = require('./helpers');
+var Catalyst = require('react-catalyst');
 
 // Firebase
 var Rebase = require('re-base');
@@ -19,6 +20,7 @@ var base = Rebase.createClass('https://blistering-inferno-6528.firebaseio.com/')
 
 // App
 var App = React.createClass({
+  mixins: [Catalyst.LinkedStateMixin],
   getInitialState: function(){
     return {
       fishes:{},
@@ -30,15 +32,32 @@ var App = React.createClass({
       context: this,
       state: 'fishes'
     });
+    var localStorageRef = localStorage.getItem('order-' + this.props.params.storeId);
+    if (localStorageRef){
+      this.setState({ order: JSON.parse(localStorageRef)});
+    }
+  },
+  componentWillUpdate: function(nextProps, nextState){
+    localStorage.setItem('order-' + this.props.params.storeId, JSON.stringify(nextState.order));
   },
   addToOrder: function(key){
     this.state.order[key] = this.state.order[key] + 1 || 1;
+    this.setState({ order: this.state.order });
+  },
+  removeFromOrder: function(key){
+    delete this.state.order[key];
     this.setState({ order: this.state.order });
   },
   addFish: function(fish){
     var timestamp = (new Date()).getTime();
     this.state.fishes['fish-' + timestamp] = fish;
     this.setState({ fishes: this.state.fishes });
+  },
+  removeFish: function(key){
+    if (confirm("Are you sure you want to remove this fish?")){
+      this.state.fishes[key] = null;
+      this.setState({ fishes: this.state.fishes });
+    }
   },
   loadSamples: function(){
     this.setState({
@@ -59,8 +78,8 @@ var App = React.createClass({
             { Object.keys(this.state.fishes).map(this.renderFish) }
           </ul> 
         </div>
-        <Order fishes={this.state.fishes} order={this.state.order} />
-        <Inventory addFish={this.addFish} loadSamples={this.loadSamples} />
+        <Order fishes={this.state.fishes} order={this.state.order} removeFromOrder={ this.removeFromOrder }/>
+        <Inventory addFish={this.addFish} loadSamples={this.loadSamples} fishes={this.state.fishes} linkState={this.linkState} removeFish={this.removeFish}  />
       </div>
     );
   }
@@ -148,16 +167,22 @@ var Order = React.createClass({
   renderOrder: function(key){
     var fish = this.props.fishes[key];
     var count = this.props.order[key];
+    var removeButton = <button onClick={this.props.removeFromOrder.bind(null, key)}>&times;</button>
 
     if (!fish){
-      return <li key={key}>Sorry, fish no longer available</li>
+      return (
+        <li key={key}>
+          Sorry, fish no longer available! {removeButton}
+        </li>
+      );
     }
 
     return (
-      <li>
+      <li key={key}>
         <span>{count}</span>lbs
         {fish.name}
         <span className="price">{h.formatPrice(count * fish.price)}</span>
+        {removeButton}
       </li>
     );
   },
@@ -191,10 +216,27 @@ var Order = React.createClass({
 
 // Inventory
 var Inventory = React.createClass({
+  renderInventory: function(key){
+    var linkState = this.props.linkState;
+    return (
+      <div className="fish-edit" key={key}>
+        <input type="text" valueLink={linkState('fishes.' + key + '.name')} />
+        <input type="text" valueLink={linkState('fishes.' + key + '.price')} />
+        <select valueLink={linkState('fishes.' + key + '.status')}>
+          <option value="unavailable">Sold Out!</option>
+          <option value="available">Fresh!</option>
+        </select>
+        <textarea valueLink={linkState('fishes.' + key + '.desc')}></textarea>
+        <input type="text" valueLink={linkState('fishes.' + key + '.image')} />
+        <button onClick={this.props.removeFish.bind(null, key)}>Remove Fish</button>
+      </div>
+    );
+  },
   render: function(){
     return(
       <div>
         <h2>Inventory</h2>
+        {Object.keys(this.props.fishes).map(this.renderInventory)}
         <AddFishForm {...this.props} />
         <button onClick={ this.props.loadSamples }>Load sample fishes</button>
       </div>
